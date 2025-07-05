@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
-	"friendly-fiesta/seeder"
+	"friendly-fiesta/torrent"
 )
 
 func main() {
 	fmt.Println("Hello, World!")
-	seeder.SeedServer()
+	torrent.TorrentServer()
 	fmt.Println("Seeder server is running on port 8080")
 }

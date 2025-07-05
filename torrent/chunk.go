@@ -1,4 +1,4 @@
-package seeder
+package torrent
 
 import (
 	"crypto/sha256"
