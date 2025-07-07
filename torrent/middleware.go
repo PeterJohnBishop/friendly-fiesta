@@ -2,6 +2,7 @@ package torrent
 
 import "github.com/gin-gonic/gin"
 
+// Limit the number of concurrent requests to Get Chunk
 func LimitConcurrentRequests(maxConcurrent int) gin.HandlerFunc {
 	semaphore := make(chan struct{}, maxConcurrent)
 

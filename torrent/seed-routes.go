@@ -93,7 +93,8 @@ func addSeederRoutes(r *gin.Engine) {
 
 }
 
-func addLimitedSeederRoutes(r *gin.RouterGroup) {
+func addLimitedConcurrencySeedRoutes(r *gin.RouterGroup) {
+
 	r.GET("/chunk/:filename/:index", func(c *gin.Context) {
 		file := c.Param("filename")
 		index := c.Param("index")
@@ -106,4 +107,5 @@ func addLimitedSeederRoutes(r *gin.RouterGroup) {
 
 		c.File(chunkPath)
 	})
+
 }

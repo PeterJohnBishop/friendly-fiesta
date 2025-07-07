@@ -25,7 +25,7 @@ func SplitFile(filePath string) (*ChunkMetadata, error) {
 	}
 	defer f.Close()
 
-	chunksDir := "seeder/chunks"
+	chunksDir := "torrent/chunks"
 	os.MkdirAll(chunksDir, os.ModePerm)
 
 	stat, _ := f.Stat()
