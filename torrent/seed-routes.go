@@ -12,7 +12,7 @@ import (
 
 func addSeederRoutes(r *gin.Engine) {
 
-	r.POST("/upload", func(c *gin.Context) {
+	r.POST("/seed", func(c *gin.Context) {
 		file, err := c.FormFile("file")
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "File is required"})
