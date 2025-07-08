@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,9 +14,9 @@ import (
 
 func Server() {
 	// Create directories
-	os.MkdirAll("torrent/files", os.ModePerm)
-	os.MkdirAll("torrent/chunks", os.ModePerm)
-	os.MkdirAll("torrent/metadata", os.ModePerm)
+	os.MkdirAll(filepath.Join(baseTorrentPath, "files"), os.ModePerm)
+	os.MkdirAll(filepath.Join(baseTorrentPath, "metadata"), os.ModePerm)
+	os.MkdirAll(filepath.Join(baseTorrentPath, "chunks"), os.ModePerm)
 
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
@@ -56,7 +57,7 @@ func connectToPeers(peerAddrs []string) {
 }
 
 func getCurrentPeerList() []string {
-	ips, err := net.LookupIP("peer-service.default.svc.cluster.local")
+	ips, err := net.LookupIP("torrent-service.default.svc.cluster.local")
 	if err != nil {
 		log.Println("DNS lookup failed:", err)
 		return nil

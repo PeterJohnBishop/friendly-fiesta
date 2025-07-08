@@ -1,9 +1,9 @@
 package torrent
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -12,6 +12,58 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
+
+var baseTorrentPath = "/data"
+
+const ChunkSize = 1 * 1024 * 1024 // 1MB
+
+type ChunkMetadata struct {
+	FileName    string   `json:"file_name"`
+	ChunkSize   int      `json:"chunk_size"`
+	NumChunks   int      `json:"num_chunks"`
+	ChunkHashes []string `json:"chunk_hashes"`
+}
+
+func splitFile(filePath string) (*ChunkMetadata, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		println("Error opening file:", err.Error())
+		return nil, err
+	}
+	defer f.Close()
+
+	chunksDir := baseTorrentPath + "/chunks"
+	os.MkdirAll(chunksDir, os.ModePerm)
+
+	stat, _ := f.Stat()
+	fileSize := stat.Size()
+	numChunks := int((fileSize + ChunkSize - 1) / ChunkSize)
+
+	hashes := []string{}
+	for i := 0; i < numChunks; i++ {
+		buf := make([]byte, ChunkSize)
+		n, _ := f.Read(buf)
+
+		chunk := buf[:n]
+		hash := sha256.Sum256(chunk)
+		hashes = append(hashes, fmt.Sprintf("%x", hash[:]))
+
+		chunkPath := filepath.Join(chunksDir, fmt.Sprintf("%s.chunk.%d", stat.Name(), i))
+		os.WriteFile(chunkPath, chunk, 0644)
+	}
+
+	meta := &ChunkMetadata{
+		FileName:    stat.Name(),
+		ChunkSize:   ChunkSize,
+		NumChunks:   numChunks,
+		ChunkHashes: hashes,
+	}
+
+	metaBytes, _ := json.MarshalIndent(meta, "", "  ")
+	os.WriteFile(filepath.Join("metadata", stat.Name()+".meta.json"), metaBytes, 0644)
+
+	return meta, nil
+}
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -48,21 +100,21 @@ func addRoutes(r *gin.Engine) {
 			return
 		}
 
-		filePath := filepath.Join("torrent/files", filepath.Base(file.Filename))
+		seedFilePath := filepath.Join(baseTorrentPath, "files", filepath.Base(file.Filename))
 
-		err = c.SaveUploadedFile(file, filePath)
+		err = c.SaveUploadedFile(file, seedFilePath)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
 			return
 		}
 
-		metadata, err := SplitFile(filePath)
+		metadata, err := splitFile(seedFilePath)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to split file"})
 			return
 		}
 
-		metaFilePath := filepath.Join("torrent/metadata", file.Filename+".meta.json")
+		metaFilePath := filepath.Join(baseTorrentPath, "metadata", file.Filename+".meta.json")
 		metaFile, err := os.Create(metaFilePath)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create metadata file"})
@@ -84,8 +136,8 @@ func addRoutes(r *gin.Engine) {
 
 	r.GET("/metadata/:filename", func(c *gin.Context) {
 		file := c.Param("filename")
-		path := filepath.Join("torrent/metadata", file+".meta.json")
-		c.File(path)
+		metaFilePath := filepath.Join(baseTorrentPath, "metadata", file+".meta.json")
+		c.File(metaFilePath)
 	})
 
 	r.GET("/metadata", func(c *gin.Context) {
@@ -120,42 +172,6 @@ func addRoutes(r *gin.Engine) {
 		c.JSON(http.StatusOK, allMetadata)
 	})
 
-	r.GET("/leech/:filename", func(c *gin.Context) {
-		file := c.Param("filename")
-		sourceServer := "http://localhost:8080" // seeder server
-		url := fmt.Sprintf("%s/metadata/%s", sourceServer, file)
-
-		resp, err := http.Get(url)
-		if err != nil || resp.StatusCode != http.StatusOK {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch metadata from source"})
-			return
-		}
-		defer resp.Body.Close()
-
-		localDir := "torrent/metadata"
-		if err := os.MkdirAll(localDir, os.ModePerm); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create metadata directory"})
-			return
-		}
-
-		localPath := filepath.Join(localDir, file+".meta.json")
-		outFile, err := os.Create(localPath)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create local metadata file"})
-			return
-		}
-		defer outFile.Close()
-
-		if _, err := io.Copy(outFile, resp.Body); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save metadata file"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"message":   "Metadata file downloaded and saved",
-			"localPath": localPath,
-		})
-	})
 }
 
 func addLimitedConcurrencyRoutes(r *gin.RouterGroup) {
@@ -164,7 +180,7 @@ func addLimitedConcurrencyRoutes(r *gin.RouterGroup) {
 		file := c.Param("filename")
 		index := c.Param("index")
 
-		chunkPath := filepath.Join("torrent/chunks", fmt.Sprintf("%s.chunk.%s", file, index))
+		chunkPath := filepath.Join(baseTorrentPath, fmt.Sprintf("%s.chunk.%s", file, index))
 		if _, err := os.Stat(chunkPath); err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Chunk not found"})
 			return
