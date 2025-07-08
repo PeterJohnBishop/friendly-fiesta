@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: torrent-service
+spec:
+  serviceName: "torrent-service"
+  replicas: 3
+  selector:
+    matchLabels:
+      app: torrent-service
+  template:
+    metadata:
+      labels:
+        app: torrent-service
+    spec:
+      containers:
+        - name: torrent-service
+          image: peterjbishop/torrent-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: data-volume
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data-volume
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+---
+# Internal Headless Service for Peer Discovery
+apiVersion: v1
+kind: Service
+metadata:
+  name: torrent-service
+spec:
+  clusterIP: None
+  selector:
+    app: torrent-service
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+# External NodePort Service to Upload Files 
+apiVersion: v1
+kind: Service
+metadata:
+  name: torrent-service-nodeport
+spec:
+  type: NodePort
+  selector:
+    app: torrent-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30080  
