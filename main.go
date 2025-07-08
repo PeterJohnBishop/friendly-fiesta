@@ -8,18 +8,13 @@ import (
 
 func main() {
 
-	fmt.Println("Starting the torrent servers...")
+	fmt.Println("Starting the torrent distribution server...")
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(1)
 
 	go func() {
 		defer wg.Done()
-		torrent.SeedServer()
-	}()
-
-	go func() {
-		defer wg.Done()
-		torrent.LeechServer()
+		torrent.Server()
 	}()
 
 	wg.Wait()

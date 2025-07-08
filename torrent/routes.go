@@ -3,14 +3,43 @@ package torrent
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 )
 
-func addSeederRoutes(r *gin.Engine) {
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+		// currently allowing all origins
+		// restrict with r.Header.Get("Origin") == "http://torrent-service:8080"
+	},
+}
+
+func addRoutes(r *gin.Engine) {
+
+	r.GET("/ws", func(c *gin.Context) {
+		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			log.Println("Upgrade error:", err)
+			return
+		}
+		defer conn.Close()
+
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				log.Println("Read error:", err)
+				break
+			}
+			fmt.Println("Received from peer:", string(msg))
+		}
+	})
 
 	r.POST("/seed", func(c *gin.Context) {
 		file, err := c.FormFile("file")
@@ -91,9 +120,45 @@ func addSeederRoutes(r *gin.Engine) {
 		c.JSON(http.StatusOK, allMetadata)
 	})
 
+	r.GET("/leech/:filename", func(c *gin.Context) {
+		file := c.Param("filename")
+		sourceServer := "http://localhost:8080" // seeder server
+		url := fmt.Sprintf("%s/metadata/%s", sourceServer, file)
+
+		resp, err := http.Get(url)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch metadata from source"})
+			return
+		}
+		defer resp.Body.Close()
+
+		localDir := "torrent/metadata"
+		if err := os.MkdirAll(localDir, os.ModePerm); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create metadata directory"})
+			return
+		}
+
+		localPath := filepath.Join(localDir, file+".meta.json")
+		outFile, err := os.Create(localPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create local metadata file"})
+			return
+		}
+		defer outFile.Close()
+
+		if _, err := io.Copy(outFile, resp.Body); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save metadata file"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message":   "Metadata file downloaded and saved",
+			"localPath": localPath,
+		})
+	})
 }
 
-func addLimitedConcurrencySeedRoutes(r *gin.RouterGroup) {
+func addLimitedConcurrencyRoutes(r *gin.RouterGroup) {
 
 	r.GET("/chunk/:filename/:index", func(c *gin.Context) {
 		file := c.Param("filename")
@@ -107,5 +172,4 @@ func addLimitedConcurrencySeedRoutes(r *gin.RouterGroup) {
 
 		c.File(chunkPath)
 	})
-
 }
